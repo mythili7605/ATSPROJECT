@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TalentPulse ATS</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap"
+    rel="stylesheet">
+
+  <!-- React & ReactDOM (UMD) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <!-- Lucide Icons (Vanilla) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* PDF.js worker hack */
+    .lucide {
+      vertical-align: middle;
+    }
+  </style>
+</head>
+
+<body class="bg-[#f8fafc] text-slate-900 font-sans selection:bg-indigo-100 overflow-x-hidden">
+  <div id="root"></div>
+
+  {% raw %}
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const { createRoot } = ReactDOM;
+
+    // Safe Icon Component using Lucide Vanilla with React Wrapper
+    const Icon = ({ name, className }) => {
+      const ref = React.useRef(null);
+
+      React.useEffect(() => {
+        if (window.lucide && ref.current) {
+          // Create a temporary element for Lucide to transform
+          const temp = document.createElement('i');
+          temp.setAttribute('data-lucide', name);
+          temp.setAttribute('class', className);
+
+          // Clear previous content and append new element
+          ref.current.innerHTML = '';
+          ref.current.appendChild(temp);
+
+          // Run Lucide transformation only on this element
+          window.lucide.createIcons({
+            root: ref.current,
+            nameAttr: 'data-lucide',
+            attrs: {
+              class: className
+            }
+          });
+        }
+      }, [name, className]);
+
+      return <span ref={ref} style={{ display: 'inline-flex', verticalAlign: 'middle' }} className={className}></span>;
+    };
+
+    // Icon Components mapping for cleaner code
+    const Sparkles = (props) => <Icon name="sparkles" {...props} />;
+    const Upload = (props) => <Icon name="upload" {...props} />;
+    const FileText = (props) => <Icon name="file-text" {...props} />;
+    const CheckCircle = (props) => <Icon name="check-circle" {...props} />;
+    const AlertCircle = (props) => <Icon name="alert-circle" {...props} />;
+    const Zap = (props) => <Icon name="zap" {...props} />;
+    const ChevronRight = (props) => <Icon name="chevron-right" {...props} />;
+    const Loader2 = (props) => <Icon name="loader-2" {...props} />;
+    const BarChart3 = (props) => <Icon name="bar-chart-3" {...props} />;
+    const Users = (props) => <Icon name="users" {...props} />;
+    const ArrowLeft = (props) => <Icon name="arrow-left" {...props} />;
+    const Lightbulb = (props) => <Icon name="lightbulb" {...props} />;
+    const MessageSquare = (props) => <Icon name="message-square" {...props} />;
+    const ShieldCheck = (props) => <Icon name="shield-check" {...props} />;
+    const ClipboardList = (props) => <Icon name="clipboard-list" {...props} />; // Not used but good to have
+    const RotateCcw = (props) => <Icon name="rotate-ccw" {...props} />;
+
+    const PDF_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+
+    const App = () => {
+      const [view, setView] = useState('candidate');
+      const [step, setStep] = useState(1);
+      const [loading, setLoading] = useState(false);
+      const [analysisResult, setAnalysisResult] = useState(null);
+      const [jobDescription, setJobDescription] = useState("");
+      const [resumeFile, setResumeFile] = useState(null);
+      const [resumeFileName, setResumeFileName] = useState("");
+      const [error, setError] = useState(null);
+
+      const [formData, setFormData] = useState({
+        fullName: '',
+        email: '',
+        targetRole: '',
+        qualification: '',
+      });
+
+      const [scoreBoard, setScoreBoard] = useState([
+        { name: "Sarah Jenkins", role: "Software Engineer", score: 92, qualification: "Engineering", date: "2024-05-10" },
+        { name: "Michael Chen", role: "Data Scientist", score: 88, qualification: "Computer Science", date: "2024-05-09" },
+        { name: "Elena Rodriguez", role: "UI/UX Designer", score: 75, qualification: "Management", date: "2024-05-08" },
+      ]);
+
+      const roles = [
+        { id: 'swe', title: 'Software Engineer' },
+        { id: 'ds', title: 'Data Scientist' },
+        { id: 'pm', title: 'Product Manager' },
+        { id: 'uiux', title: 'UI/UX Designer' },
+      ];
+
+      // Initialize PDF.js
+      useEffect(() => {
+        if (window.pdfjsLib) {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+        }
+      }, []);
+
+      // Refresh Icons when DOM updates
+      // Refresh Icons when DOM updates - REMOVED as we handle it per component now
+
+      const handleInputChange = (e) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
+      };
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.type !== "application/pdf") {
+          setError("Please upload a valid PDF file.");
+          return;
+        }
+        setResumeFile(file);
+        setResumeFileName(file.name);
+        setError(null);
+      };
+
+      const extractTextLocally = async (file) => {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          fullText += textContent.items.map(item => item.str).join(" ") + "\n";
+        }
+        return fullText;
+      };
+
+      const runFallbackAI = async (text) => {
+        const apiKey = ""; // Warning: Client-side Key Exposure
+        const systemPrompt = `Analyze Resume vs Job Description. Return JSON: {score: 0-100, summary: "...", feedback: {verdict: "...", pursueSkills: [], nextSteps: "..."}, skillMatch: [{skill: "...", status: "matched"}]}`;
+        const userPrompt = `Role: ${formData.targetRole}\nJD: ${jobDescription}\nResume: ${text}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: userPrompt }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        });
+
+        const result = await response.json();
+        return JSON.parse(result.candidates[0].content.parts[0].text);
+      };
+
+      const processAnalysis = async () => {
+        if (!resumeFile) return;
+        setLoading(true);
+        setError(null);
+
+        const data = new FormData();
+        data.append('resume', resumeFile);
+        data.append('job_description', jobDescription);
+        data.append('full_name', formData.fullName);
+        data.append('qualification', formData.qualification);
+        data.append('target_role', formData.targetRole);
+
+        try {
+          // Using absolute path for backend call to be safe against different serving methods
+          // Ensure port matches main.py (8080)
+          const response = await fetch('http://127.0.0.1:8080/analyze', {
+            method: 'POST',
+            body: data,
+          });
+
+          if (!response.ok) throw new Error('Backend responded with error');
+          const result = await response.json();
+          completeAnalysis(result);
+
+        } catch (err) {
+          console.warn("Backend connection failed, falling back to client-side AI...", err);
+          try {
+            const text = await extractTextLocally(resumeFile);
+            const result = await runFallbackAI(text);
+            completeAnalysis(result);
+          } catch (fallbackErr) {
+            console.error(fallbackErr);
+            setError("Analysis failed. Please ensure the backend is running on port 8080.");
+          }
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const completeAnalysis = (result) => {
+        setAnalysisResult(result);
+        setScoreBoard(prev => [{
+          name: formData.fullName,
+          role: roles.find(r => r.id === formData.targetRole)?.title || "Candidate",
+          score: result.score,
+          qualification: formData.qualification,
+          date: new Date().toISOString().split('T')[0]
+        }, ...prev]);
+        setStep(3);
+      };
+
+      return (
+        <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans selection:bg-indigo-100 overflow-x-hidden relative">
+          <div className="fixed top-0 left-0 w-full h-full pointer-events-none -z-10 overflow-hidden">
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-100 rounded-full blur-[120px] opacity-60"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-blue-100 rounded-full blur-[100px] opacity-50"></div>
+          </div>
+
+          <nav className="backdrop-blur-md bg-white/70 border-b border-white/20 px-6 py-4 sticky top-0 z-50">
+            <div className="max-w-6xl mx-auto flex justify-between items-center">
+              <div className="flex items-center gap-3 cursor-pointer group" onClick={() => { setView('candidate'); setStep(1); setAnalysisResult(null); }}>
+                <div className="bg-gradient-to-br from-indigo-600 to-blue-500 p-2.5 rounded-xl shadow-lg shadow-indigo-200 group-hover:scale-105 transition-transform duration-300">
+                  <Sparkles className="text-white w-5 h-5" />
+                </div>
+                <span className="font-extrabold text-xl tracking-tight text-slate-900">TalentPulse <span className="text-indigo-600">ATS</span></span>
+              </div>
+              <div className="flex gap-1 bg-slate-100/50 p-1 rounded-full border border-slate-200">
+                <button onClick={() => setView('candidate')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all duration-300 ${view === 'candidate' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Apply</button>
+                <button onClick={() => setView('scoreboard')} className={`px-6 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition-all duration-300 ${view === 'scoreboard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}><Users className="w-4 h-4" /> Rankings</button>
+              </div>
+            </div>
+          </nav>
+
+          <main className="max-w-6xl mx-auto px-6 py-12 relative">
+            {view === 'candidate' ? (
+              <>
+                <div className="flex items-center justify-between mb-16 px-4 max-w-xl mx-auto">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center group">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg transition-all duration-500 transform ${step >= i ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-110' : 'bg-white text-slate-400 border border-slate-200'}`}>
+                        {step > i ? <CheckCircle className="w-6 h-6" /> : i}
+                      </div>
+                      {i < 3 && <div className={`w-20 h-0.5 mx-4 rounded-full transition-all duration-700 ${step > i ? 'bg-indigo-600' : 'bg-slate-200'}`} />}
+                    </div>
+                  ))}
+                </div>
+
+                {step === 1 && (
+                  <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/50 p-10 animate-in fade-in slide-in-from-bottom-8 duration-700 max-w-4xl mx-auto">
+                    <div className="text-center mb-10">
+                      <h1 className="text-4xl font-black text-slate-900 mb-3 tracking-tight">Define Requirements</h1>
+                      <p className="text-slate-500 text-lg">Define your domain qualification and the role you want to play.</p>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-8 mb-8">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Candidate Name</label>
+                          <input type="text" name="fullName" value={formData.fullName} placeholder="John Doe" className="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all duration-200 bg-white/50" onChange={handleInputChange} />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Domain Qualification</label>
+                          <select name="qualification" value={formData.qualification} className="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all duration-200 bg-white/50 appearance-none" onChange={handleInputChange}>
+                            <option value="">Select Domain</option>
+                            <option value="Engineering">Engineering</option>
+                            <option value="Management">Management</option>
+                            <option value="Computer Science">Computer Science</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Target Position</label>
+                          <select name="targetRole" value={formData.targetRole} className="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all duration-200 bg-white/50 appearance-none" onChange={handleInputChange}>
+                            <option value="">Select Role</option>
+                            {roles.map(role => <option key={role.id} value={role.id}>{role.title}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase ml-1">Recruitment Criteria</label>
+                        <textarea
+                          placeholder="Paste job description or skills required by our company..."
+                          className="w-full h-[220px] px-5 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none transition-all duration-200 bg-white/50 resize-none text-sm leading-relaxed"
+                          value={jobDescription}
+                          onChange={(e) => setJobDescription(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <button onClick={() => setStep(2)} disabled={!formData.fullName || !jobDescription} className="w-full bg-slate-900 hover:bg-black disabled:bg-slate-300 text-white font-bold py-5 rounded-2xl shadow-2xl transition-all duration-300 flex items-center justify-center gap-3">
+                      Next: Resume Upload <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/50 p-10 animate-in fade-in slide-in-from-bottom-8 duration-700 max-w-3xl mx-auto">
+                    <div className="text-center mb-10">
+                      <h1 className="text-3xl font-black text-slate-900 mb-3">Upload Credentials</h1>
+                      <p className="text-slate-500">Provide your PDF resume for automated skill matching.</p>
+                    </div>
+
+                    {error && (
+                      <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl flex items-center gap-3 text-sm font-bold">
+                        <AlertCircle className="w-5 h-5" /> {error}
+                      </div>
+                    )}
+
+                    <div className={`group relative border-2 border-dashed rounded-[2rem] p-16 flex flex-col items-center justify-center transition-all duration-500 ${resumeFile ? 'border-indigo-400 bg-indigo-50/20' : 'border-slate-200 hover:border-indigo-400 bg-slate-50/50'}`}>
+                      {!resumeFile ? (
+                        <>
+                          <div className="bg-white p-6 rounded-3xl shadow-xl group-hover:scale-110 transition-transform duration-500">
+                            <Upload className="w-10 h-10 text-indigo-600" />
+                          </div>
+                          <p className="text-slate-900 font-bold mt-8 text-lg">Drop PDF Resume here</p>
+                          <input type="file" accept="application/pdf" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileUpload} />
+                        </>
+                      ) : (
+                        <div className="text-center">
+                          <div className="bg-indigo-600 p-6 rounded-3xl shadow-xl">
+                            <FileText className="w-10 h-10 text-white" />
+                          </div>
+                          <p className="text-slate-900 font-black mt-6 text-xl">{resumeFileName}</p>
+                          <button onClick={() => setResumeFile(null)} className="text-sm text-red-500 font-bold mt-3 underline">Replace</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-6 mt-12">
+                      <button onClick={() => setStep(1)} className="w-1/3 bg-white border border-slate-200 text-slate-700 font-bold py-5 rounded-2xl transition-all duration-300">Back</button>
+                      <button onClick={processAnalysis} disabled={!resumeFile || loading} className="flex-1 bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl flex items-center justify-center gap-3 transition-all transform hover:-translate-y-1">
+                        {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Zap className="w-5 h-5 fill-current" /> Run Skill Match</>}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {step === 3 && analysisResult && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-12 duration-1000 max-w-6xl mx-auto pb-20">
+                    <div className="grid lg:grid-cols-3 gap-8">
+                      <div className="lg:col-span-1 bg-white rounded-[2.5rem] shadow-xl p-10 flex flex-col items-center justify-center border border-white/50 relative overflow-hidden">
+                        <div className="relative z-10 text-center">
+                          <svg className="w-48 h-48 transform -rotate-90 mx-auto">
+                            <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-slate-100" />
+                            <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" strokeDasharray={553} strokeDashoffset={553 - (553 * (analysisResult.score || 0)) / 100} className="text-indigo-600 transition-all duration-[2000ms]" strokeLinecap="round" />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-5xl font-black text-slate-900">{analysisResult.score}%</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Match Mark</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="lg:col-span-2 bg-slate-900 rounded-[2.5rem] shadow-2xl p-10 text-white flex flex-col justify-center">
+                        <h2 className="text-indigo-400 text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4" /> Company Analysis Report
+                        </h2>
+                        <h3 className="text-3xl font-bold mb-4">{formData.fullName} Analysis</h3>
+                        <p className="text-xl text-slate-300 leading-relaxed font-medium mb-8 italic">"{analysisResult.summary}"</p>
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                      <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border border-white/50">
+                        <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                          <Lightbulb className="w-6 h-6 text-indigo-600" /> Key Skills
+                        </h3>
+                        <div className="space-y-3">
+                          {analysisResult.feedback?.pursueSkills?.map((skill, i) => (
+                            <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100 font-bold text-slate-700 text-sm">
+                              <CheckCircle className="w-4 h-4 text-emerald-500" /> {skill}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border border-white/50">
+                        <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                          <MessageSquare className="w-6 h-6 text-indigo-600" /> Full Feedback
+                        </h3>
+                        <div className="bg-indigo-50/50 p-5 rounded-3xl mb-6 text-sm text-slate-700 leading-relaxed border border-indigo-100">
+                          {analysisResult.feedback?.verdict}
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border border-white/50">
+                        <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                          <BarChart3 className="w-6 h-6 text-indigo-600" /> Matrix Analysis
+                        </h3>
+                        <div className="grid grid-cols-1 gap-2">
+                          {analysisResult.skillMatch?.map((s, i) => (
+                            <div key={i} className={`flex justify-between items-center p-3 rounded-xl border text-xs font-bold ${s.status === 'matched' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                              <span>{s.skill}</span>
+                              {s.status === 'matched' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-6">
+                      <button onClick={() => { setStep(1); setAnalysisResult(null); }} className="flex-1 bg-slate-900 text-white font-black py-6 rounded-[2rem] shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-3 group">
+                        <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" /> Reset Analysis
+                      </button>
+                      <button onClick={() => setView('scoreboard')} className="px-12 py-6 rounded-[2rem] font-black text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-xl">
+                        View Rankings
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="animate-in fade-in slide-in-from-top-12 duration-1000">
+                <div className="flex flex-col md:flex-row items-end justify-between mb-12 gap-6">
+                  <div>
+                    <button onClick={() => setView('candidate')} className="text-indigo-600 flex items-center gap-2 text-sm font-black mb-4 hover:-translate-x-1 transition-transform">
+                      <ArrowLeft className="w-4 h-4" /> BACK TO PORTAL
+                    </button>
+                    <h1 className="text-5xl font-black text-slate-900 tracking-tighter">Company Rank Score</h1>
+                  </div>
+                  <div className="bg-white px-8 py-6 rounded-[2rem] border border-slate-200 shadow-xl text-center min-w-[180px]">
+                    <p className="text-4xl font-black text-indigo-600 leading-none">{scoreBoard.length}</p>
+                    <p className="text-slate-400 uppercase tracking-widest mt-2 text-[10px] font-black">Analyzed Profiles</p>
+                  </div>
+                </div>
+
+                <div className="bg-white/80 backdrop-blur-xl rounded-[3rem] shadow-2xl border border-white/50 overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50/50">
+                      <tr>
+                        <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Rank</th>
+                        <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Candidate Info</th>
+                        <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Match Score</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {[...scoreBoard].sort((a, b) => b.score - a.score).map((candidate, idx) => (
+                        <tr key={idx} className="group hover:bg-slate-50/50 transition-all">
+                          <td className="px-10 py-8 font-black text-slate-400">#{idx + 1}</td>
+                          <td className="px-10 py-8">
+                            <div className="flex flex-col">
+                              <span className="font-black text-slate-900">{candidate.name}</span>
+                              <div className="flex gap-2 mt-1">
+                                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">{candidate.qualification}</span>
+                                <span className="text-[10px] font-bold text-slate-400 px-2 py-0.5 rounded uppercase border border-slate-100">{candidate.role}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-10 py-8">
+                            <div className="flex items-center gap-6">
+                              <div className="flex-1 h-3 bg-slate-100 rounded-full w-48 overflow-hidden">
+                                <div className="h-full bg-indigo-600" style={{ width: `${candidate.score}%` }} />
+                              </div>
+                              <span className="font-black text-xl text-slate-900">{candidate.score}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </main>
+
+          <footer className="max-w-6xl mx-auto px-6 py-20 border-t border-slate-200/60 text-center">
+            <p className="text-slate-400 text-sm font-medium">Internal Skill Analysis System — AI Powered Powered by TalentPulse</p>
+          </footer>
+        </div>
+      );
+    };
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+  {% endraw %}
+</body>
+
+</html>
